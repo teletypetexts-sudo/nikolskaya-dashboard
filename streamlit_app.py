@@ -48,11 +48,9 @@ st.set_page_config(page_title="Никольская · Финансы", page_ico
 # ──────────────────────────────────────────────────────────────────────────
 # СТИЛЬ (Apple iOS)
 # ──────────────────────────────────────────────────────────────────────────
-st.markdown("""
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+st.html("""
 <style>
-  html, body, [class*="css"], .stApp { font-family: -apple-system, 'SF Pro Display', 'Inter', sans-serif; }
+  html, body, [class*="css"], .stApp { font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif; }
   .stApp { background: #F5F5F7; }
   #MainMenu, footer, header { visibility: hidden; }
   .block-container { padding-top: 1.4rem; max-width: 1180px; }
@@ -84,7 +82,7 @@ st.markdown("""
   .stTabs [data-baseweb="tab"] { border-radius:10px; padding:8px 20px; font-weight:600; font-size:15px; color:#1D1D1F; background:transparent; }
   .stTabs [aria-selected="true"] { background:#FFFFFF !important; box-shadow:0 1px 4px rgba(0,0,0,0.08); }
 </style>
-""", unsafe_allow_html=True)
+""")
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -153,6 +151,21 @@ def div_icon(name):
         if key in n:
             return ico
     return "•"
+
+
+def _pkey(s):
+    return str(s).strip().lower().replace("ё", "е")
+
+
+def plan_value(plan, name):
+    """Ищем план по подразделению: точное совпадение, иначе частичное."""
+    n = _pkey(name)
+    if n in plan:
+        return plan[n]
+    for k, v in plan.items():
+        if k and (n in k or k in n):
+            return v
+    return 0.0
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -262,7 +275,8 @@ def get_plan(month):
         name = str(cell(r, 1)).strip()
         if not name or "расход" in typ:
             continue
-        plan[name] = plan.get(name, 0) + to_number(cell(r, col))
+        key = name.lower().replace("ё", "е")
+        plan[key] = plan.get(key, 0) + to_number(cell(r, col))
     return plan
 
 
@@ -415,10 +429,14 @@ def main():
         plan = get_plan(month)
         fact = (inc_m[inc_m["is_op"]].groupby("div")["sum"].sum().sort_values(ascending=False)
                 if not inc_m.empty else pd.Series(dtype=float))
-        names = list(dict.fromkeys(list(fact.index) + list(plan.keys())))
+        names = list(fact.index)
+        seen = {_pkey(x) for x in names}
+        for k in plan.keys():
+            if k not in seen and not any((k in m or m in k) for m in seen):
+                names.append(k)
         for name in names:
             f = float(fact.get(name, 0))
-            p = float(plan.get(name, 0))
+            p = float(plan_value(plan, name))
             pct = (f / p * 100) if p else (100 if f > 0 else 0)
             col = plan_color(pct)
             st.markdown(f"""
