@@ -154,7 +154,7 @@ def div_icon(name):
 
 
 def _pkey(s):
-    return str(s).strip().lower().replace("ё", "е")
+    return re.sub(r"\s+", " ", str(s).strip().lower()).replace("ё", "е")
 
 
 def plan_value(plan, name):
@@ -275,7 +275,7 @@ def get_plan(month):
         name = str(cell(r, 1)).strip()
         if not name or "расход" in typ:
             continue
-        key = name.lower().replace("ё", "е")
+        key = _pkey(name)
         plan[key] = plan.get(key, 0) + to_number(cell(r, col))
     return plan
 
@@ -422,10 +422,6 @@ def main():
         with c3:
             kpi_card("Расход операционный", money(op_exp), C["orange"], "без займов")
 
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
-                    'font-weight:700;margin-bottom:14px">План / факт по подразделениям</div>',
-                    unsafe_allow_html=True)
         plan = get_plan(month)
         fact = (inc_m[inc_m["is_op"]].groupby("div")["sum"].sum().sort_values(ascending=False)
                 if not inc_m.empty else pd.Series(dtype=float))
@@ -434,12 +430,13 @@ def main():
         for k in plan.keys():
             if k not in seen and not any((k in m or m in k) for m in seen):
                 names.append(k)
+        bars = ""
         for name in names:
             f = float(fact.get(name, 0))
             p = float(plan_value(plan, name))
             pct = (f / p * 100) if p else (100 if f > 0 else 0)
             col = plan_color(pct)
-            st.markdown(f"""
+            bars += f"""
               <div style="margin-bottom:16px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                   <span class="row-name">{div_icon(name)} {name}</span>
@@ -447,10 +444,13 @@ def main():
                 </div>
                 <div class="bar-track"><div class="bar-fill" style="width:{min(pct,100)}%;background:{col}"></div></div>
                 <div class="row-num" style="margin-top:5px">{money(f)} из {money(p)}</div>
-              </div>""", unsafe_allow_html=True)
-        if not names:
-            st.caption("Нет данных по подразделениям за период.")
-        st.markdown('</div>', unsafe_allow_html=True)
+              </div>"""
+        if not bars:
+            bars = '<div class="row-num">Нет данных по подразделениям за период.</div>'
+        st.markdown(
+            '<div class="card"><div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
+            'font-weight:700;margin-bottom:14px">План / факт по подразделениям</div>'
+            f'{bars}</div>', unsafe_allow_html=True)
 
     # ═══ ДИНАМИКА ═══
     with tab2:
@@ -463,9 +463,8 @@ def main():
             cdf["date"] = pd.to_datetime(cdf["date"])
             palette = [C["blue"], C["green"], C["orange"], C["purple"], C["pink"]]
 
-            st.markdown('<div class="card">', unsafe_allow_html=True)
             st.markdown('<div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
-                        'font-weight:700;margin-bottom:8px">Доходы по дням · топ-5 подразделений</div>',
+                        'font-weight:700;margin:4px 0 8px 0">Доходы по дням · топ-5 подразделений</div>',
                         unsafe_allow_html=True)
             chart = alt.Chart(cdf).mark_line(point=True, strokeWidth=2, interpolate="monotone").encode(
                 x=alt.X("date:T", title=None, axis=alt.Axis(format="%d.%m")),
@@ -479,7 +478,6 @@ def main():
             ).properties(height=320).configure_view(strokeWidth=0).configure_axis(
                 grid=True, gridColor="#E9E9EB", labelColor="#8E8E93")
             st.altair_chart(chart, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
             pm = month - 1 or 12
             py = year if month > 1 else year - 1
@@ -496,25 +494,23 @@ def main():
     # ═══ КОНТРОЛЬ ═══
     with tab3:
         loans = get_loans(inc, exp)
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
-                    'font-weight:700;margin-bottom:14px">Займы · баланс по контрагентам</div>',
-                    unsafe_allow_html=True)
         if not loans:
-            st.caption("Открытых займов нет.")
+            rows_html = '<div class="row-num">Открытых займов нет.</div>'
         else:
+            rows_html = ""
             for ctr, bal in sorted(loans.items(), key=lambda x: -abs(x[1])):
                 if bal > 0:
                     txt, col = f"клуб должен {money(bal)}", C["red"]
                 else:
                     txt, col = f"переплата {money(abs(bal))} (проверьте архив)", C["orange"]
-                st.markdown(f"""
-                  <div style="display:flex;justify-content:space-between;align-items:center;
-                       padding:12px 0;border-bottom:1px solid #F0F0F0">
-                    <span class="row-name">{ctr}</span>
-                    <span class="pct-pill" style="background:{col}1A;color:{col}">{txt}</span>
-                  </div>""", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+                rows_html += (f'<div style="display:flex;justify-content:space-between;'
+                              f'align-items:center;padding:12px 0;border-bottom:1px solid #F0F0F0">'
+                              f'<span class="row-name">{ctr}</span>'
+                              f'<span class="pct-pill" style="background:{col}1A;color:{col}">{txt}</span></div>')
+        st.markdown(
+            '<div class="card"><div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
+            'font-weight:700;margin-bottom:14px">Займы · баланс по контрагентам</div>'
+            f'{rows_html}</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
                     'font-weight:700;margin:8px 0 10px 0">Алерты</div>', unsafe_allow_html=True)
@@ -573,20 +569,19 @@ def main():
 
         d_dar, d_el = totals["Дарья"], totals["Елена"]
         gap = abs(d_dar - d_el) / 2
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
-                    'font-weight:700;margin-bottom:8px">Взаиморасчёт между учредителями</div>',
-                    unsafe_allow_html=True)
         if gap < 1:
-            st.markdown(f'<div class="alert alert-green">Выплаты сбалансированы 50/50. '
-                        f'Всего выплачено {money(total_all)}.</div>', unsafe_allow_html=True)
+            inner = (f'<div class="alert alert-green">Выплаты сбалансированы 50/50. '
+                     f'Всего выплачено {money(total_all)}.</div>')
         else:
             more = "Дарья" if d_dar > d_el else "Елена"
             less = "Елена" if d_dar > d_el else "Дарья"
-            st.markdown(f'<div class="alert alert-orange">{more} получила больше. '
-                        f'Чтобы выровнять до 50/50, <b>{more} должна {less}: {money(gap)}</b>.<br>'
-                        f'Всего выплачено {money(total_all)}.</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+            inner = (f'<div class="alert alert-orange">{more} получила больше. '
+                     f'Чтобы выровнять до 50/50, <b>{more} должна {less}: {money(gap)}</b>.<br>'
+                     f'Всего выплачено {money(total_all)}.</div>')
+        st.markdown(
+            '<div class="card"><div class="kpi-label" style="font-size:16px;color:#1D1D1F;'
+            'font-weight:700;margin-bottom:8px">Взаиморасчёт между учредителями</div>'
+            f'{inner}</div>', unsafe_allow_html=True)
         if div.empty:
             st.caption("Листы «Дивиденды» / «Архив дивидендов» пока пусты.")
 
